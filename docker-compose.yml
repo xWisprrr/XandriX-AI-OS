@@ -1,0 +1,103 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: xandrix
+      POSTGRES_PASSWORD: xandrix_dev
+      POSTGRES_DB: xandrix
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xandrix"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.service
+      args:
+        SERVICE: auth
+    environment:
+      PORT: "3001"
+      DATABASE_URL: "postgresql://xandrix:xandrix_dev@postgres:5432/xandrix"
+      JWT_SECRET: "dev_jwt_secret_at_least_32_chars_long_ok"
+      JWT_REFRESH_SECRET: "dev_refresh_secret_at_least_32_chars_ok"
+      JWT_ACCESS_EXPIRES_IN: "15m"
+      JWT_REFRESH_EXPIRES_IN: "7d"
+      NODE_ENV: "development"
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  model-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.service
+      args:
+        SERVICE: model-gateway
+    environment:
+      PORT: "3002"
+      NODE_ENV: "development"
+      PROVIDER: "stub"
+    ports:
+      - "3002:3002"
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.service
+      args:
+        SERVICE: orchestrator
+    environment:
+      PORT: "3003"
+      NODE_ENV: "development"
+    ports:
+      - "3003:3003"
+
+  memory:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.service
+      args:
+        SERVICE: memory
+    environment:
+      PORT: "3004"
+      NODE_ENV: "development"
+    ports:
+      - "3004:3004"
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    environment:
+      NODE_ENV: "development"
+      NEXT_PUBLIC_ORCHESTRATOR_URL: "http://localhost:3003"
+      NEXT_PUBLIC_MODEL_GATEWAY_URL: "http://localhost:3002"
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+  redis_data:

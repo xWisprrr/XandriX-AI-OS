@@ -1,0 +1,22 @@
+ARG SERVICE
+
+FROM node:20-alpine AS base
+RUN npm install -g pnpm@9
+
+FROM base AS builder
+WORKDIR /app
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY packages/xandrix-types ./packages/xandrix-types
+COPY services/${SERVICE} ./services/${SERVICE}
+RUN pnpm install --frozen-lockfile --filter @xandrix/types --filter @xandrix/${SERVICE}
+RUN pnpm --filter @xandrix/types build
+RUN pnpm --filter @xandrix/${SERVICE} build
+
+FROM node:20-alpine AS runner
+ARG SERVICE
+WORKDIR /app
+COPY --from=builder /app/services/${SERVICE}/dist ./dist
+COPY --from=builder /app/services/${SERVICE}/node_modules ./node_modules
+COPY --from=builder /app/services/${SERVICE}/package.json ./package.json
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
